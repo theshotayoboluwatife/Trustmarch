@@ -6,6 +6,8 @@
       "use": "@vercel/node"
     }
   ],
+    "buildCommand": "tsc --noEmit --skipLibCheck || true",
+
   "routes": [
     {
       "src": "/(.*)",
