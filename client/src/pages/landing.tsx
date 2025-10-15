@@ -242,10 +242,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Icons } from "@/lib/icons";
-import { useAuth } from "@/hooks/useAuth"; // Adjust path as needed
+import { useAuth } from "@/hooks/useAuth";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 export default function Landing() {
-  const { login, signup, isAuthenticated } = useAuth();
+  const { login, signup, resetPassword, isAuthenticated } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -254,6 +262,13 @@ export default function Landing() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  
+  // Forgot password state
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
 
   // REMOVED THE PROBLEMATIC REDIRECT - Let the router handle navigation!
   // The router will automatically show the right page based on auth state
@@ -270,7 +285,7 @@ export default function Landing() {
         // User will be redirected by the auth check above
       } else {
         const result = await signup(email, password, firstName, lastName);
-        if (result.message) {
+        if (result && 'message' in result && result.message) {
           setSuccessMessage(result.message);
         } else {
           setSuccessMessage("Account created successfully!");
@@ -280,6 +295,29 @@ export default function Landing() {
       setError(err.message || "Authentication failed");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResetLoading(true);
+    setResetError("");
+    setResetSuccess("");
+
+    try {
+      await resetPassword(resetEmail);
+      setResetSuccess("Un email de réinitialisation a été envoyé à votre adresse email. Veuillez vérifier votre boîte de réception.");
+      setResetEmail("");
+      // Close dialog after 3 seconds
+      setTimeout(() => {
+        setShowForgotPassword(false);
+        setResetSuccess("");
+      }, 3000);
+    } catch (err: any) {
+      setResetError(err.message || "Erreur lors de l'envoi de l'email");
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -422,13 +460,79 @@ export default function Landing() {
                   </div>
 
                   <div>
-                    <Label htmlFor="password">Mot de passe</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="password">Mot de passe</Label>
+                      {isLogin && (
+                        <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
+                          <DialogTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+                              data-testid="link-forgot-password"
+                            >
+                              Mot de passe oublié?
+                            </button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Réinitialiser le mot de passe</DialogTitle>
+                              <DialogDescription>
+                                Entrez votre adresse email et nous vous enverrons un lien pour réinitialiser votre mot de passe.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <form onSubmit={handleResetPassword} className="space-y-4">
+                              <div>
+                                <Label htmlFor="reset-email">Email</Label>
+                                <Input
+                                  id="reset-email"
+                                  type="email"
+                                  value={resetEmail}
+                                  onChange={(e) => setResetEmail(e.target.value)}
+                                  placeholder="votre@email.com"
+                                  required
+                                  data-testid="input-reset-email"
+                                />
+                              </div>
+
+                              {resetError && (
+                                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                                  <p className="text-sm text-red-800">{resetError}</p>
+                                </div>
+                              )}
+
+                              {resetSuccess && (
+                                <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                                  <p className="text-sm text-green-800">{resetSuccess}</p>
+                                </div>
+                              )}
+
+                              <Button
+                                type="submit"
+                                disabled={resetLoading}
+                                className="w-full"
+                                data-testid="button-send-reset-email"
+                              >
+                                {resetLoading ? (
+                                  <div className="flex items-center justify-center space-x-2">
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                    <span>Envoi en cours...</span>
+                                  </div>
+                                ) : (
+                                  "Envoyer le lien de réinitialisation"
+                                )}
+                              </Button>
+                            </form>
+                          </DialogContent>
+                        </Dialog>
+                      )}
+                    </div>
                     <Input
                       id="password"
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
+                      data-testid="input-password"
                     />
                   </div>
 

@@ -36,6 +36,8 @@ import {
   type ProfileWithUser,
 } from "@shared/schema";
 import { db } from "./db";
+import { notificationService } from "./notification_service";
+
 import { eq, and, ne, notInArray, desc, avg, count, inArray } from "drizzle-orm";
 
 export interface IStorage {
@@ -552,6 +554,12 @@ export class DatabaseStorage implements IStorage {
         eq(userAchievements.achievementId, achievementId)
       ));
 
+    // Fetch the achievement name for the notification message
+    const [achievement] = await db
+      .select()
+      .from(achievements)
+      .where(eq(achievements.id, achievementId));
+
     if (existing && !existing.isCompleted) {
       const [updated] = await db
         .update(userAchievements)
@@ -562,6 +570,16 @@ export class DatabaseStorage implements IStorage {
         })
         .where(eq(userAchievements.id, existing.id))
         .returning();
+
+      // 🔔 Send notification
+      await notificationService.createNotification({
+        userId,
+        type: "achievement_unlocked",
+        content: `You unlocked the “${achievement?.title || "an achievement"}” achievement!`,
+        relatedId: achievementId,
+        payload: { achievementKey: achievement?.key },
+      });
+
       return updated;
     } else if (!existing) {
       const [created] = await db
@@ -571,14 +589,92 @@ export class DatabaseStorage implements IStorage {
           achievementId,
           progress: 1,
           maxProgress: 1,
-          isCompleted: true
+          isCompleted: true,
+          unlockedAt: new Date()
         })
         .returning();
+
+      // 🔔 Send notification for new achievement
+      await notificationService.createNotification({
+        userId,
+        type: "achievement_unlocked",
+        content: `You unlocked the “${achievement?.title || "an achievement"}” achievement!`,
+        relatedId: achievementId,
+        payload: { achievementKey: achievement?.key },
+      });
+
       return created;
     }
 
     return existing;
   }
+
+
+  async checkAndUpdateAchievements(userId: string): Promise<void> {
+    const allAchievements = await this.getAchievements();
+    const userAchievements = await this.getUserAchievements(userId);
+    const completedAchievementIds = new Set(
+      userAchievements.filter(ua => ua.isCompleted).map(ua => ua.achievementId)
+    );
+
+    for (const achievement of allAchievements) {
+      if (completedAchievementIds.has(achievement.id)) continue;
+
+      const condition = achievement.condition as any;
+      let shouldUnlock = false;
+
+      switch (achievement.key) {
+        case 'profile_complete':
+          const completion = await this.getProfileCompletionScore(userId);
+          shouldUnlock = completion.percentage >= 100;
+          console.log('should unlock profileComplete achievement', shouldUnlock);
+          break;
+
+        case 'first_photo':
+          const [userProfile] = await db
+            .select()
+            .from(profiles)
+            .where(eq(profiles.userId, userId));
+
+          shouldUnlock = !!userProfile?.profileImageUrl;
+          break;
+
+        case 'bio_writer':
+          const [profile] = await db.select().from(profiles).where(eq(profiles.userId, userId));
+          shouldUnlock = !!(profile?.bio && profile.bio.trim().length > 20);
+          break;
+
+        case 'challenge_participant':
+          const responses = await db
+            .select({ count: count() })
+            .from(challengeResponses)
+            .where(eq(challengeResponses.userId, userId));
+          shouldUnlock = responses[0]?.count >= 1;
+          break;
+
+        case 'social_butterfly':
+          const challengeCount = await db
+            .select({ count: count() })
+            .from(challengeResponses)
+            .where(eq(challengeResponses.userId, userId));
+          shouldUnlock = challengeCount[0]?.count >= 5;
+          break;
+
+        case 'honest_reviewer':
+          const ratingsGiven = await db
+            .select({ count: count() })
+            .from(ratings)
+            .where(eq(ratings.raterId, userId));
+          shouldUnlock = ratingsGiven[0]?.count >= 3;
+          break;
+      }
+
+      if (shouldUnlock) {
+        await this.unlockAchievement(userId, achievement.id);
+      }
+    }
+  }
+
 
   async getProfileCompletionScore(userId: string): Promise<{ score: number; maxScore: number; percentage: number }> {
     const [user] = await db
@@ -616,70 +712,6 @@ export class DatabaseStorage implements IStorage {
     return { score, maxScore, percentage };
   }
 
-  async checkAndUpdateAchievements(userId: string): Promise<void> {
-    const allAchievements = await this.getAchievements();
-    const userAchievements = await this.getUserAchievements(userId);
-    const completedAchievementIds = new Set(
-      userAchievements.filter(ua => ua.isCompleted).map(ua => ua.achievementId)
-    );
-
-    for (const achievement of allAchievements) {
-      if (completedAchievementIds.has(achievement.id)) continue;
-
-      const condition = achievement.condition as any;
-      let shouldUnlock = false;
-
-      switch (achievement.key) {
-        case 'profile_complete':
-          const completion = await this.getProfileCompletionScore(userId);
-          shouldUnlock = completion.percentage >= 100;
-          console.log('should unlock profileComplete achievement', shouldUnlock);
-          break;
-        
-        case 'first_photo':
-          const [userProfile] = await db
-            .select()
-            .from(profiles)
-            .where(eq(profiles.userId, userId));
-
-          shouldUnlock = !!userProfile?.profileImageUrl;
-          break;
-        
-        case 'bio_writer':
-          const [profile] = await db.select().from(profiles).where(eq(profiles.userId, userId));
-          shouldUnlock = !!(profile?.bio && profile.bio.trim().length > 20);
-          break;
-        
-        case 'challenge_participant':
-          const responses = await db
-            .select({ count: count() })
-            .from(challengeResponses)
-            .where(eq(challengeResponses.userId, userId));
-          shouldUnlock = responses[0]?.count >= 1;
-          break;
-        
-        case 'social_butterfly':
-          const challengeCount = await db
-            .select({ count: count() })
-            .from(challengeResponses)
-            .where(eq(challengeResponses.userId, userId));
-          shouldUnlock = challengeCount[0]?.count >= 5;
-          break;
-        
-        case 'honest_reviewer':
-          const ratingsGiven = await db
-            .select({ count: count() })
-            .from(ratings)
-            .where(eq(ratings.raterId, userId));
-          shouldUnlock = ratingsGiven[0]?.count >= 3;
-          break;
-      }
-
-      if (shouldUnlock) {
-        await this.unlockAchievement(userId, achievement.id);
-      }
-    }
-  }
 
   // Messaging operations
   async sendMessage(message: InsertMessage): Promise<Message> {

@@ -1,5 +1,5 @@
 import type { Express, RequestHandler } from "express";
-import { supabaseAdmin } from "./db";
+import { supabaseAdmin, getSupabase } from "./db";
 import { storage } from "./storage";
 
 export async function setupAuth(app: Express) {
@@ -29,6 +29,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
         profile_image_url: user.user_metadata?.avatar_url || '',
       }
     };
+     (req as any).supabaseUser = user;
 
     // Ensure user exists in database (important for all endpoints to work)
     try {
@@ -51,3 +52,5 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     res.status(401).json({ message: "Authentication failed" });
   }
 };
+
+

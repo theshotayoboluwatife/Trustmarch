@@ -25,20 +25,7 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// User storage table for Replit Auth
-// export const users = pgTable("users", {
-//   id: varchar("id").primaryKey().notNull(),
-//   email: varchar("email").unique(),
-//   firstName: varchar("first_name"),
-//   lastName: varchar("last_name"),
-//   profileImageUrl: varchar("profile_image_url"),
-//   profileImagePath: varchar("profile_image_path"),
-//   stripeCustomerId: varchar("stripe_customer_id"),
-//   stripeSubscriptionId: varchar("stripe_subscription_id"),
-//   subscriptionStatus: varchar("subscription_status").default("free"), // free, active, past_due, canceled
-//   createdAt: timestamp("created_at").defaultNow(),
-//   updatedAt: timestamp("updated_at").defaultNow(),
-// });
+
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().notNull(),
@@ -235,6 +222,17 @@ export const userAchievements = pgTable("user_achievements", {
   index("idx_user_achievements_completed").on(table.isCompleted),
 ]);
 
+
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  type: text("type").notNull(), // 'message', 'friend_request', etc.
+  content: text("content").notNull(),
+  relatedId: integer("related_id"), // ID of related message, friend request, etc.
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Achievement relations
 export const achievementsRelations = relations(achievements, ({ many }) => ({
   userAchievements: many(userAchievements),
@@ -299,6 +297,12 @@ export const insertUserAchievementSchema = createInsertSchema(userAchievements).
   unlockedAt: true,
 });
 
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+  isRead: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -333,3 +337,6 @@ export type ProfileWithUser = Profile & {
   recentRatings?: (Rating & { rater: User })[];
   isOnline?: boolean;
 };
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;

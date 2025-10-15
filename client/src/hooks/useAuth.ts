@@ -53,23 +53,43 @@ export function useAuth() {
 
   const initializeAuth = async () => {
     try {
+      // Check if we're in a password recovery flow
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const isRecoveryFlow = hashParams.get('type') === 'recovery';
+      
       // Get initial session
       const { data: { session } } = await supabase.auth.getSession();
-      updateGlobalAuthState(session?.user ?? null, false);
+      
+      // Don't treat recovery sessions as authenticated
+      if (isRecoveryFlow) {
+        updateGlobalAuthState(null, false);
+      } else {
+        updateGlobalAuthState(session?.user ?? null, false);
 
-      // Ensure user profile exists in backend if user is authenticated
-      if (session?.user) {
-        await ensureUserProfile(session.user);
+        // Ensure user profile exists in backend if user is authenticated
+        if (session?.user) {
+          await ensureUserProfile(session.user);
+        }
       }
 
       // Listen for auth changes
       supabase.auth.onAuthStateChange(async (event, session) => {
         console.log('Auth state changed:', event);
-        updateGlobalAuthState(session?.user ?? null, false);
+        
+        // Check again if we're in recovery flow
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const isRecoveryFlow = hashParams.get('type') === 'recovery';
+        
+        // Don't treat recovery sessions as authenticated
+        if (isRecoveryFlow) {
+          updateGlobalAuthState(null, false);
+        } else {
+          updateGlobalAuthState(session?.user ?? null, false);
 
-        // Create profile on sign in
-        if (event === "SIGNED_IN" && session?.user) {
-          await ensureUserProfile(session.user);
+          // Create profile on sign in (but not on recovery)
+          if (event === "SIGNED_IN" && session?.user) {
+            await ensureUserProfile(session.user);
+          }
         }
       });
     } catch (error) {
@@ -161,6 +181,34 @@ export function useAuth() {
     updateGlobalAuthState(null, false);
   };
 
+  const resetPassword = async (email: string) => {
+    console.log('Requesting password reset...');
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      console.error('Password reset error:', error);
+      throw new Error(error.message);
+    }
+
+    console.log('Password reset email sent');
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    console.log('Updating password...');
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (error) {
+      console.error('Password update error:', error);
+      throw new Error(error.message);
+    }
+
+    console.log('Password updated successfully');
+  };
+
   return {
     user: globalUser,
     isLoading: globalIsLoading,
@@ -168,6 +216,8 @@ export function useAuth() {
     login,
     signup,
     logout,
+    resetPassword,
+    updatePassword,
   };
 }
 
@@ -175,9 +225,9 @@ export function useAuth() {
 export async function authenticatedFetch(url: string, options: RequestInit = {}) {
   const { data: { session } } = await supabase.auth.getSession();
 
-  const headers = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...(options.headers as Record<string, string>),
   };
 
   if (session?.access_token) {

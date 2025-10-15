@@ -106,3 +106,29 @@ export function formatDateTime(date: Date | string): string {
   const targetDate = typeof date === 'string' ? new Date(date) : date;
   return formatDate(targetDate, 'dd/MM/yyyy HH:mm');
 }
+
+export function formatUTCTimestamp(utcTimestamp: string): string {
+  try {
+    if (!utcTimestamp) return "";
+
+    // Convert UTC timestamp to local time and format as 12-hour
+    const gameDate = new Date(utcTimestamp);
+
+    // Check if the date is valid
+    if (isNaN(gameDate.getTime())) {
+      console.error("Invalid UTC timestamp:", utcTimestamp);
+      return "";
+    }
+
+    const displayTime = gameDate.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+    return displayTime;
+  } catch (error) {
+    console.error("Error formatting UTC timestamp:", error);
+    return "";
+  }
+}

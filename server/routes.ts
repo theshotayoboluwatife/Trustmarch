@@ -12,7 +12,8 @@ import { z } from "zod";
 import Stripe from "stripe";
 import express from "express";
 import path from "path";
-
+import { notificationService } from "./notification_service";
+import { supabaseAuth } from "./supabaseAuth";
 import { supabaseAdmin } from "./db"; 
 
 
@@ -242,41 +243,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Swipe routes
-  app.post('/api/swipes', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const swipeData = insertSwipeSchema.parse({
-        ...req.body,
-        swiperId: userId,
-      });
+app.post('/api/swipes', isAuthenticated, async (req: any, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const swipeData = insertSwipeSchema.parse({
+      ...req.body,
+      swiperId: userId,
+    });
 
-      // Check if already swiped
-      const hasSwipped = await storage.hasUserSwiped(userId, swipeData.swipedUserId);
-      if (hasSwipped) {
-        return res.status(400).json({ message: "Already swiped on this user" });
-      }
-
-      const swipe = await storage.createSwipe(swipeData);
-
-      // Check for mutual likes to create match
-      if (swipeData.liked) {
-        const reciprocalSwipes = await storage.getSwipesBetweenUsers(swipeData.swipedUserId, userId);
-        const mutualLike = reciprocalSwipes.find(s => s.liked);
-        
-        if (mutualLike) {
-          await storage.createMatch(userId, swipeData.swipedUserId);
-          res.json({ ...swipe, matched: true });
-        } else {
-          res.json({ ...swipe, matched: false });
-        }
-      } else {
-        res.json({ ...swipe, matched: false });
-      }
-    } catch (error) {
-      console.error("Error creating swipe:", error);
-      res.status(400).json({ message: "Failed to create swipe" });
+    // Check if already swiped
+    const hasSwipped = await storage.hasUserSwiped(userId, swipeData.swipedUserId);
+    if (hasSwipped) {
+      return res.status(400).json({ message: "Already swiped on this user" });
     }
-  });
+
+    const swipe = await storage.createSwipe(swipeData);
+
+    // --- 🔔 Send "You were liked" notification ---
+    if (swipeData.liked) {
+      await notificationService.createNotification({
+        userId: swipeData.swipedUserId, // the person being liked
+        type: "like",
+        content: "Someone liked your profile!",
+        relatedId: swipe.id,
+        payload: { swiperId: userId },
+      });
+    }
+
+    // --- ❤️ Check for mutual like to create a match ---
+    if (swipeData.liked) {
+      const reciprocalSwipes = await storage.getSwipesBetweenUsers(
+        swipeData.swipedUserId,
+        userId
+      );
+      const mutualLike = reciprocalSwipes.find((s) => s.liked);
+
+      if (mutualLike) {
+        await storage.createMatch(userId, swipeData.swipedUserId);
+
+        // --- 🔔 Notify both users about the match ---
+        await notificationService.createNotification({
+          userId: userId,
+          type: "match",
+          content: "You matched with someone!",
+          relatedId: swipeData.swipedUserId,
+          payload: { matchedUserId: swipeData.swipedUserId },
+        });
+
+        await notificationService.createNotification({
+          userId: swipeData.swipedUserId,
+          type: "match",
+          content: "You matched with someone!",
+          relatedId: userId,
+          payload: { matchedUserId: userId },
+        });
+
+        return res.json({ ...swipe, matched: true });
+      }
+    }
+
+    // --- No match, just a normal swipe response ---
+    res.json({ ...swipe, matched: false });
+  } catch (error) {
+    console.error("Error creating swipe:", error);
+    res.status(400).json({ message: "Failed to create swipe" });
+  }
+});
 
   // Match routes
   app.get('/api/matches', isAuthenticated, async (req: any, res) => {
@@ -1215,6 +1247,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Token refresh failed" });
     }
   });
+
+  // Notification endpoints
+  app.get(
+    "/api/notifications",
+    isAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const rows = await notificationService.getNotifications(req, res);
+        res.json(rows);
+      } catch (err) {
+        console.error("Error fetching notifications:", err);
+        res.status(500).json({ message: "Failed to fetch notifications" });
+      }
+    },
+  );
+
+  // GET unread count
+  app.get(
+    "/api/notifications/unread/count",
+    isAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const count = await notificationService.getUnreadNotificationsCount(
+          req,
+          res,
+        );
+        res.json({ count });
+      } catch (err) {
+        console.error("Error fetching unread notification count:", err);
+        res
+          .status(500)
+          .json({ message: "Failed to fetch unread notification count" });
+      }
+    },
+  );
+
+  // POST mark all read
+  app.post(
+    "/api/notifications/all/read",
+    isAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        await notificationService.markAllNotificationsAsRead(req, res);
+        res.json({ success: true });
+      } catch (err) {
+        console.error("Error marking all notifications as read:", err);
+        res
+          .status(500)
+          .json({ message: "Failed to mark all notifications as read" });
+      }
+    },
+  );
+
+  // POST single notification as read
+  app.post(
+    "/api/notifications/:id/read",
+    isAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const notifId = parseInt(req.params.id, 10);
+        const updated = await notificationService.markNotificationAsRead(
+          req,
+          res,
+          notifId,
+        );
+        if (!updated) {
+          return res.status(404).json({ message: "Notification not found" });
+        }
+        res.json(updated);
+      } catch (err: any) {
+        console.error("Error marking notification as read:", err);
+        if (err.message === "Unauthorized") {
+          return res
+            .status(403)
+            .json({ message: "Cannot modify others’ notifications" });
+        }
+        res
+          .status(500)
+          .json({ message: "Failed to mark notification as read" });
+      }
+    },
+  );
 
   // Note: Catch-all route removed - Vite handles this in development
 

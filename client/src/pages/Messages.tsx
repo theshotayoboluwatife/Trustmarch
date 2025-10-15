@@ -14,6 +14,7 @@ import { MessageCircle, Send, Heart, Smile, ThumbsUp, ArrowLeft, Users, Circle }
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Navigation } from '@/components/Navigation';
+import { Header } from '@/components/layout/header';
 
 interface Match {
   id: string;
@@ -225,6 +226,7 @@ export default function Messages() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <Header/>
       <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100vh-8rem)]">
           {/* Matches List */}

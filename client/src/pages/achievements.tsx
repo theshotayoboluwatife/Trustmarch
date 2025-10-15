@@ -4,6 +4,7 @@ import { AchievementBadge } from "@/components/AchievementBadge";
 import { ProfileCompletionCard } from "@/components/ProfileCompletionCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Header } from "@/components/layout/header";
 import { Navigation } from "@/components/Navigation";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -146,6 +147,7 @@ export default function AchievementsPage() {
       <div className="min-h-screen bg-gray-50 p-4 pb-28">
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
+        <Header/>
         <div className="text-center">
           <div className="flex items-center justify-center space-x-2 mb-4">
             <Icons.Trophy className="w-8 h-8 text-yellow-500" />
@@ -214,15 +216,15 @@ export default function AchievementsPage() {
         <ProfileCompletionCard />
 
         {/* Achievements Tabs */}
-        <Tabs defaultValue="all" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="all">Tous</TabsTrigger>
-            <TabsTrigger value="profile">Profil</TabsTrigger>
-            <TabsTrigger value="social">Social</TabsTrigger>
-            <TabsTrigger value="community">Communauté</TabsTrigger>
-            <TabsTrigger value="special">Spécial</TabsTrigger>
-            <TabsTrigger value="reputation">Réputation</TabsTrigger>
-          </TabsList>
+          <Tabs defaultValue="all" className="w-full">
+            <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 gap-1 h-auto p-1">
+              <TabsTrigger value="all" className="text-xs md:text-sm px-2 py-2 md:py-2.5">Tous</TabsTrigger>
+              <TabsTrigger value="profile" className="text-xs md:text-sm px-2 py-2 md:py-2.5">Profil</TabsTrigger>
+              <TabsTrigger value="social" className="text-xs md:text-sm px-2 py-2 md:py-2.5">Social</TabsTrigger>
+              <TabsTrigger value="community" className="text-xs md:text-sm px-2 py-2 md:py-2.5">Communauté</TabsTrigger>
+              <TabsTrigger value="special" className="text-xs md:text-sm px-2 py-2 md:py-2.5">Spécial</TabsTrigger>
+              <TabsTrigger value="reputation" className="text-xs md:text-sm px-2 py-2 md:py-2.5">Réputation</TabsTrigger>
+            </TabsList>
 
           <TabsContent value="all" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
